@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Currency Test Simple</title>
+    <meta charset="UTF-8">
+</head>
+<body>
+    <h1>Currency Test</h1>
+    <div id="result"></div>
+    
+    <script src="./script.js"></script>
+    <script>
+        // Test the currency functionality
+        document.getElementById('result').innerHTML = '<h3>Testing Currency:</h3>';
+        
+        // Test with INR
+        currentCurrency = 'INR';
+        let formatted = formatCurrency(1500.50);
+        document.getElementById('result').innerHTML += '<p>INR 1500.50: ' + formatted + '</p>';
+        
+        // Test with USD
+        currentCurrency = 'USD';
+        formatted = formatCurrency(1500.50);
+        document.getElementById('result').innerHTML += '<p>USD 1500.50: ' + formatted + '</p>';
+        
+        // Test with EUR
+        currentCurrency = 'EUR';
+        formatted = formatCurrency(1500.50);
+        document.getElementById('result').innerHTML += '<p>EUR 1500.50: ' + formatted + '</p>';
+    </script>
+</body>
+</html>

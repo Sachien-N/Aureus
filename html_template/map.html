@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="https://public-frontend-cos.metadl.com/mgx/img/favicon.png" type="image/png">
+    <title>Aureus - Expense Map</title>
+    <link rel="stylesheet" href="./style.css">
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+    <!-- Supabase -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <h2>💰 Aureus</h2>
+            </div>
+            <div class="nav-menu">
+                <a href="index.html" class="nav-link">Dashboard</a>
+                <a href="expenses.html" class="nav-link">Expenses</a>
+                <a href="map.html" class="nav-link active">Map</a>
+                <a href="calendar.html" class="nav-link">Calendar</a>
+                <button id="logoutBtn" class="logout-btn">Logout</button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="page-header">
+            <h1>🗺️ Expense Map</h1>
+            <p>Visualize your spending locations</p>
+        </div>
+
+        <!-- Map Controls -->
+        <div class="map-controls">
+            <div class="control-group">
+                <select id="categoryFilter">
+                    <option value="">All Categories</option>
+                    <option value="Food">Food & Dining</option>
+                    <option value="Transportation">Transportation</option>
+                    <option value="Shopping">Shopping</option>
+                    <option value="Entertainment">Entertainment</option>
+                    <option value="Bills">Bills & Utilities</option>
+                    <option value="Healthcare">Healthcare</option>
+                    <option value="Other">Other</option>
+                </select>
+                <input type="date" id="dateFrom">
+                <input type="date" id="dateTo">
+                <button id="applyFilters" class="btn-primary">Apply Filters</button>
+              
+            </div>
+        </div>
+
+        <!-- Map Container -->
+        <div id="map" class="map-container"></div>
+
+        <!-- Expense Details Panel -->
+        <div id="expenseDetails" class="expense-details-panel" style="display: none;">
+            <h3>Expense Details</h3>
+            <div id="expenseInfo"></div>
+            <button id="closeDetails" class="btn-secondary">Close</button>
+        </div>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="./auth.js"></script>
+    <script>
+        let map;
+        let markers = [];
+        let expenses = [];
+        let heatLayer;
+
+        document.addEventListener('DOMContentLoaded', function() {
+            checkAuthStatus();
+            initializeMap();
+            loadExpenses();
+            
+            // Listen for expense updates from other tabs/windows
+            if (window.BroadcastChannel) {
+                const channel = new BroadcastChannel('expense_updates');
+                channel.onmessage = function(event) {
+                    if (event.data.type === 'new_expense') {
+                        console.log('Received expense update notification');
+                        loadExpenses();
+                    }
+                };
+            }
+            
+            // Listen for localStorage changes
+            window.addEventListener('storage', function(event) {
+                if (event.key === 'expense_update' || event.key === 'aureus_expenses') {
+                    console.log('localStorage changed, reloading expenses');
+                    loadExpenses();
+                }
+            });
+            
+            // Poll for updates every 2 seconds (in case same tab)
+            setInterval(function() {
+                const lastUpdate = localStorage.getItem('expense_update');
+                if (lastUpdate && lastUpdate !== window.lastExpenseUpdate) {
+                    window.lastExpenseUpdate = lastUpdate;
+                    console.log('Detected expense update, reloading...');
+                    loadExpenses();
+                }
+            }, 2000);
+        });
+
+        function initializeEventListeners() {
+            document.getElementById('applyFilters').addEventListener('click', applyFilters);
+            document.getElementById('closeDetails').addEventListener('click', function() {
+                document.getElementById('expenseDetails').style.display = 'none';
+            });
+        }
+
+        function initializeMap() {
+            // Initialize map centered on VIT Vellore
+            const vitLat = 12.9698;
+            const vitLng = 79.1565;
+            map = L.map('map').setView([vitLat, vitLng], 15); // VIT Vellore with closer zoom
+
+            // Add tile layer
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors',
+                maxZoom: 19
+            }).addTo(map);
+
+            // Add VIT Vellore marker
+        
+            
+            // Initialize event listeners
+            initializeEventListeners();
+        }
+
+        async function loadExpenses() {
+            try {
+                // First try to load from Supabase
+                try {
+                    const { data: expenseData, error } = await supabase
+                        .from('app_7433469c6a_expenses')
+                        .select('*')
+                        .not('latitude', 'is', null)
+                        .not('longitude', 'is', null)
+                        .order('date', { ascending: false });
+
+                    if (!error && expenseData && expenseData.length > 0) {
+                        expenses = expenseData;
+                        displayExpensesOnMap();
+                        showMessage(`Loaded ${expenses.length} expenses from database`, 'success');
+                        return;
+                    }
+                } catch (supabaseError) {
+                    console.log('Supabase not available, trying other sources...');
+                }
+                
+                // Try to load from localStorage
+                const localExpenses = JSON.parse(localStorage.getItem('aureus_expenses') || '[]');
+                const localExpensesWithCoords = localExpenses.filter(e => e.latitude && e.longitude);
+                
+                if (localExpensesWithCoords.length > 0) {
+                    expenses = localExpensesWithCoords;
+                    displayExpensesOnMap();
+                    showMessage(`Loaded ${expenses.length} local expenses`, 'success');
+                    return;
+                }
+                
+                // If no expenses found, show empty message
+                if (expenses.length === 0) {
+                    console.log('No expenses found');
+                    displayExpensesOnMap();
+                    showMessage('No expenses yet. Add expenses with locations to see them on the map!', 'success');
+                    return;
+                }
+                
+                // Display user expenses
+                displayExpensesOnMap();
+                showMessage(`Loaded ${expenses.length} expense${expenses.length > 1 ? 's' : ''} from your data`, 'success');
+                
+            } catch (error) {
+                console.error('Error loading expenses:', error);
+                
+                // Absolute fallback
+                expenses = generateLocalDemoData();
+                displayExpensesOnMap();
+                showMessage('Showing demo data', 'success');
+            }
+        }
+        
+
+
+        function displayExpensesOnMap() {
+            // Clear existing markers
+            markers.forEach(marker => map.removeLayer(marker));
+            markers = [];
+
+            if (heatLayer) {
+                map.removeLayer(heatLayer);
+            }
+
+            let totalAmount = 0;
+            let expenseCount = 0;
+            const heatPoints = [];
+
+            expenses.forEach(expense => {
+                if (expense.latitude && expense.longitude) {
+                    const marker = L.marker([expense.latitude, expense.longitude])
+                        .addTo(map);
+                    
+                    heatPoints.push([expense.latitude, expense.longitude, expense.amount]);
+
+                    // Create popup content
+                    const popupContent = `
+                        <div class="marker-popup">
+                            <h4>${expense.title}</h4>
+                            <p><strong>ரூ${parseFloat(expense.amount).toFixed(2)}</strong></p>
+                            <p>${expense.category}</p>
+                            <p>${new Date(expense.date).toLocaleDateString()}</p>
+                            ${expense.location ? `<p>📍 ${expense.location}</p>` : ''}
+                            <button onclick="showExpenseDetails('${expense.id}')" class="btn-small">View Details</button>
+                        </div>
+                    `;
+
+                    marker.bindPopup(popupContent);
+                    markers.push(marker);
+
+                    totalAmount += parseFloat(expense.amount);
+                    expenseCount++;
+                }
+            });
+
+            heatLayer = L.heatLayer(heatPoints, {
+                radius: 25,
+                blur: 15,
+                maxZoom: 18,
+                gradient: {0.4: 'blue', 0.65: 'lime', 1: 'red'}
+            }).addTo(map);
+
+            document.getElementById('totalExpensesOnMap').textContent = `${expenseCount} expenses`;
+            document.getElementById('totalAmountOnMap').textContent = `ரூ${totalAmount.toFixed(2)}`;
+        }
+
+        function showExpenseDetails(expenseId) {
+            const expense = expenses.find(e => e.id === expenseId);
+            if (!expense) return;
+
+            const detailsPanel = document.getElementById('expenseDetails');
+            const expenseInfo = document.getElementById('expenseInfo');
+
+            expenseInfo.innerHTML = `
+                <div class="expense-detail-item">
+                    <label>Title:</label>
+                    <span>${expense.title}</span>
+                </div>
+                <div class="expense-detail-item">
+                    <label>Amount:</label>
+                    <span>ரூ${parseFloat(expense.amount).toFixed(2)}</span>
+abel>Title:</label>
+                    <span>${expense.title}</span>
+                </div>
+                <div class="expense-detail-item">
+                    <label>Amount:</label>
+                    <span>$${parseFloat(expense.amount).toFixed(2)}</span>
+                </div>
+                <div class="expense-detail-item">
+                    <label>Category:</label>
+                    <span>${expense.category}</span>
+                </div>
+                <div class="expense-detail-item">
+                    <label>Date:</label>
+                    <span>${new Date(expense.date).toLocaleDateString()}</span>
+                </div>
+                ${expense.location ? `
+                <div class="expense-detail-item">
+                    <label>Location:</label>
+                    <span>${expense.location}</span>
+                </div>
+                ` : ''}
+                ${expense.notes ? `
+                <div class="expense-detail-item">
+                    <label>Notes:</label>
+                    <span>${expense.notes}</span>
+                </div>
+                ` : ''}
+            `;
+
+            detailsPanel.style.display = 'block';
+        }
+
+        function applyFilters() {
+            const category = document.getElementById('categoryFilter').value;
+            const dateFrom = document.getElementById('dateFrom').value;
+            const dateTo = document.getElementById('dateTo').value;
+
+            let filteredExpenses = [...expenses];
+
+            if (category) {
+                filteredExpenses = filteredExpenses.filter(expense => expense.category === category);
+            }
+
+            if (dateFrom) {
+                filteredExpenses = filteredExpenses.filter(expense => expense.date >= dateFrom);
+            }
+
+            if (dateTo) {
+                filteredExpenses = filteredExpenses.filter(expense => expense.date <= dateTo);
+            }
+
+            // Temporarily replace expenses array for display
+            const originalExpenses = expenses;
+            expenses = filteredExpenses;
+            displayExpensesOnMap();
+            expenses = originalExpenses;
+        }
+
+        function showMessage(message, type) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+            messageDiv.textContent = message;
+            messageDiv.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                padding: 15px 20px;
+                border-radius: 5px;
+                color: white;
+                z-index: 10000;
+                background: ${type === 'success' ? '#4CAF50' : '#f44336'};
+            `;
+            
+            document.body.appendChild(messageDiv);
+            
+            setTimeout(() => {
+                messageDiv.remove();
+            }, 3000);
+        }
+    </script>
+</body>
+</html>

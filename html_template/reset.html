@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reset Aureus Data</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #e3f2fd 0%, #f0f8ff 50%, #fff5ee 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .reset-container {
+            background: white;
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+            max-width: 500px;
+            text-align: center;
+        }
+        
+        h1 {
+            color: #4682b4;
+            margin-bottom: 20px;
+            font-size: 2rem;
+        }
+        
+        p {
+            color: #666;
+            margin-bottom: 30px;
+            line-height: 1.6;
+        }
+        
+        .info-box {
+            background: #FFF5EE;
+            border-left: 4px solid #FFE4B5;
+            padding: 15px;
+            margin: 20px 0;
+            text-align: left;
+            border-radius: 5px;
+        }
+        
+        .info-box strong {
+            color: #4682b4;
+        }
+        
+        .btn {
+            padding: 15px 30px;
+            font-size: 1rem;
+            font-weight: 600;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            margin: 10px;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-danger {
+            background: linear-gradient(45deg, #ff6b6b, #ffa726);
+            color: white;
+        }
+        
+        .btn-danger:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(255, 107, 107, 0.3);
+        }
+        
+        .btn-secondary {
+            background: #87CEEB;
+            color: white;
+        }
+        
+        .btn-secondary:hover {
+            background: #4682B4;
+        }
+        
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 10px;
+            font-weight: 600;
+            display: none;
+        }
+        
+        .status.success {
+            background: #98FB98;
+            color: #2d5016;
+            display: block;
+        }
+        
+        .data-info {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+        
+        .data-count {
+            font-size: 2rem;
+            color: #4682b4;
+            font-weight: 700;
+        }
+    </style>
+</head>
+<body>
+    <div class="reset-container">
+        <h1>🔄 Reset Aureus Data</h1>
+        <p>This will clear all old sample data and give you a fresh start with your own expenses.</p>
+        
+        <div class="data-info">
+            <p><strong>Current Data:</strong></p>
+            <div class="data-count" id="expenseCount">0</div>
+            <p>expenses stored</p>
+        </div>
+        
+        <div class="info-box">
+            <strong>⚠️ What will be cleared:</strong>
+            <ul style="margin: 10px 0 0 20px;">
+                <li>All sample/demo expenses</li>
+                <li>All your added expenses</li>
+                <li>Calendar reminders</li>
+                <li>Settings & preferences</li>
+            </ul>
+        </div>
+        
+        <div class="info-box">
+            <strong>✅ After reset:</strong>
+            <ul style="margin: 10px 0 0 20px;">
+                <li>Clean slate - no old data</li>
+                <li>Add your own real expenses</li>
+                <li>They'll show on map immediately</li>
+                <li>Perfect for demo or real use</li>
+            </ul>
+        </div>
+        
+        <button class="btn btn-danger" onclick="clearData()">
+            🗑️ Clear All Data
+        </button>
+        
+        <button class="btn btn-secondary" onclick="goHome()">
+            ← Back to App
+        </button>
+        
+        <div id="status" class="status"></div>
+    </div>
+    
+    <script>
+        // Show current data count
+        function updateCount() {
+            const expenses = JSON.parse(localStorage.getItem('aureus_expenses') || '[]');
+            document.getElementById('expenseCount').textContent = expenses.length;
+        }
+        
+        updateCount();
+        
+        function clearData() {
+            if (confirm('Are you sure? This will delete ALL data and cannot be undone!')) {
+                // Clear all Aureus data
+                localStorage.removeItem('aureus_expenses');
+                localStorage.removeItem('aureus_reminders');
+                localStorage.removeItem('expense_update');
+                localStorage.removeItem('aureus_currency');
+                
+                // Show success message
+                const status = document.getElementById('status');
+                status.className = 'status success';
+                status.textContent = '✅ All data cleared successfully! Redirecting to app...';
+                
+                // Update count
+                updateCount();
+                
+                // Redirect after 2 seconds
+                setTimeout(() => {
+                    window.location.href = 'login.html';
+                }, 2000);
+            }
+        }
+        
+        function goHome() {
+            window.location.href = 'index.html';
+        }
+    </script>
+</body>
+</html>

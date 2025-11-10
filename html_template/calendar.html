@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="https://public-frontend-cos.metadl.com/mgx/img/favicon.png" type="image/png">
+    <title>Aureus - Calendar</title>
+    <link rel="stylesheet" href="./style.css">
+    <!-- Supabase -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <h2>💰 Aureus</h2>
+            </div>
+            <div class="nav-menu">
+                <a href="index.html" class="nav-link">Dashboard</a>
+                <a href="expenses.html" class="nav-link">Expenses</a>
+                <a href="map.html" class="nav-link">Map</a>
+                <a href="calendar.html" class="nav-link active">Calendar</a>
+                <button id="logoutBtn" class="logout-btn">Logout</button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="page-header">
+            <h1>📅 Financial Calendar</h1>
+            <div class="calendar-actions">
+                <button id="exportCsvBtn" class="btn-primary">Export CSV</button>
+                <button id="addReminderBtn" class="btn-secondary">Add Reminder</button>
+            </div>
+        </div>
+
+        <!-- Calendar Navigation -->
+        <div class="calendar-nav">
+            <button id="prevMonth" class="btn-nav">‹</button>
+            <h2 id="currentMonth">January 2024</h2>
+            <button id="nextMonth" class="btn-nav">›</button>
+        </div>
+
+        <!-- Calendar Grid -->
+        <div class="calendar-container">
+            <div class="calendar-header">
+                <div class="calendar-day-header">Sun</div>
+                <div class="calendar-day-header">Mon</div>
+                <div class="calendar-day-header">Tue</div>
+                <div class="calendar-day-header">Wed</div>
+                <div class="calendar-day-header">Thu</div>
+                <div class="calendar-day-header">Fri</div>
+                <div class="calendar-day-header">Sat</div>
+            </div>
+            <div id="calendarGrid" class="calendar-grid">
+                <!-- Calendar days will be generated here -->
+            </div>
+        </div>
+
+        <!-- Monthly Summary -->
+        <div class="monthly-summary">
+            <h3>Monthly Summary</h3>
+            <div class="summary-stats">
+                <div class="summary-item">
+                    <span class="summary-label">Total Expenses:</span>
+                    <span id="monthlyTotal" class="summary-value">ரூ0.00</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">Average Daily:</span>
+                    <span id="dailyAverage" class="summary-value">ரூ0.00</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">Highest Day:</span>
+                    <span id="highestDay" class="summary-value">ரூ0.00</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">Transactions:</span>
+                    <span id="transactionCount" class="summary-value">0</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Day Details Modal -->
+    <div id="dayModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h3 id="dayModalTitle">Expenses for Day</h3>
+            <div id="dayExpenses" class="day-expenses">
+                <!-- Day expenses will be loaded here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Reminder Modal -->
+    <div id="reminderModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h3>Add Financial Reminder</h3>
+            <form id="reminderForm">
+                <div class="form-group">
+                    <label for="reminderTitle">Reminder Title</label>
+                    <input type="text" id="reminderTitle" placeholder="e.g., Pay credit card bill" required>
+                </div>
+                <div class="form-group">
+                    <label for="reminderDate">Date</label>
+                    <input type="date" id="reminderDate" required>
+                </div>
+                <div class="form-group">
+                    <label for="reminderType">Type</label>
+                    <select id="reminderType">
+                        <option value="bill">Bill Payment</option>
+                        <option value="budget">Budget Review</option>
+                        <option value="investment">Investment</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="reminderNotes">Notes</label>
+                    <textarea id="reminderNotes" placeholder="Additional details..."></textarea>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn-primary">Add Reminder</button>
+                    <button type="button" class="btn-secondary" id="cancelReminder">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="./auth.js"></script>
+    <script>
+        let currentDate = new Date();
+        let expenses = [];
+        let reminders = [];
+
+        document.addEventListener('DOMContentLoaded', function() {
+            checkAuthStatus();
+            initializeEventListeners();
+            loadExpenses();
+            generateCalendar();
+        });
+
+        function initializeEventListeners() {
+            document.getElementById('prevMonth').addEventListener('click', () => changeMonth(-1));
+            document.getElementById('nextMonth').addEventListener('click', () => changeMonth(1));
+            document.getElementById('exportCsvBtn').addEventListener('click', exportToCsv);
+            document.getElementById('addReminderBtn').addEventListener('click', openReminderModal);
+            
+            // Modal close buttons
+            document.querySelectorAll('.close').forEach(btn => {
+                btn.addEventListener('click', closeModals);
+            });
+
+            // Reminder form
+            document.getElementById('reminderForm').addEventListener('submit', handleReminderSubmit);
+            document.getElementById('cancelReminder').addEventListener('click', closeModals);
+        }
+
+        async function loadExpenses() {
+            try {
+                // Try to load from Supabase
+                try {
+                    const { data: expenseData, error } = await supabase
+                        .from('app_7433469c6a_expenses')
+                        .select('*')
+                        .order('date', { ascending: false });
+
+                    if (!error && expenseData) {
+                        expenses = expenseData;
+                    }
+                } catch (supabaseError) {
+                    console.log('Supabase not available, loading from localStorage');
+                }
+                
+                // Load from localStorage if Supabase failed or is empty
+                if (expenses.length === 0) {
+                    const localExpenses = JSON.parse(localStorage.getItem('aureus_expenses') || '[]');
+                    expenses = localExpenses;
+                }
+                
+                // Load reminders
+                try {
+                    const { data: reminderData, error } = await supabase
+                        .from('app_7433469c6a_reminders')
+                        .select('*')
+                        .order('date', { ascending: true });
+
+                    if (!error && reminderData) {
+                        reminders = reminderData;
+                    }
+                } catch (reminderError) {
+                    console.log('Loading reminders from localStorage');
+                }
+                
+                // Load reminders from localStorage if Supabase failed
+                if (reminders.length === 0) {
+                    const localReminders = JSON.parse(localStorage.getItem('aureus_reminders') || '[]');
+                    reminders = localReminders;
+                }
+                
+                generateCalendar();
+                updateMonthlySummary();
+            } catch (error) {
+                console.error('Error loading expenses:', error);
+                // Load from localStorage as fallback
+                expenses = JSON.parse(localStorage.getItem('aureus_expenses') || '[]');
+                reminders = JSON.parse(localStorage.getItem('aureus_reminders') || '[]');
+                generateCalendar();
+                updateMonthlySummary();
+            }
+        }
+
+        function changeMonth(direction) {
+            currentDate.setMonth(currentDate.getMonth() + direction);
+            generateCalendar();
+            updateMonthlySummary();
+        }
+
+        function generateCalendar() {
+            const year = currentDate.getFullYear();
+            const month = currentDate.getMonth();
+            
+            // Update month header
+            const monthNames = [
+                'January', 'February', 'March', 'April', 'May', 'June',
+                'July', 'August', 'September', 'October', 'November', 'December'
+            ];
+            document.getElementById('currentMonth').textContent = `${monthNames[month]} ${year}`;
+
+            // Get first day of month and number of days
+            const firstDay = new Date(year, month, 1);
+            const lastDay = new Date(year, month + 1, 0);
+            const daysInMonth = lastDay.getDate();
+            const startingDayOfWeek = firstDay.getDay();
+
+            const calendarGrid = document.getElementById('calendarGrid');
+            calendarGrid.innerHTML = '';
+
+            // Add empty cells for days before the first day of the month
+            for (let i = 0; i < startingDayOfWeek; i++) {
+                const emptyDay = document.createElement('div');
+                emptyDay.className = 'calendar-day empty';
+                calendarGrid.appendChild(emptyDay);
+            }
+
+            // Respect locally deleted reminders
+            const deletedReminderIds = JSON.parse(localStorage.getItem('aureus_deleted_reminder_ids') || '[]');
+            const visibleReminders = reminders.filter(r => !deletedReminderIds.includes(r.id));
+
+            // Add days of the month
+            for (let day = 1; day <= daysInMonth; day++) {
+                const dayElement = document.createElement('div');
+                dayElement.className = 'calendar-day';
+                
+                const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                const dayExpenses = expenses.filter(expense => expense.date === dateStr);
+                const dayReminders = visibleReminders.filter(reminder => reminder.date === dateStr);
+                const totalAmount = dayExpenses.reduce((sum, expense) => sum + parseFloat(expense.amount), 0);
+
+                dayElement.innerHTML = `
+                    <div class="day-number">${day}</div>
+                    ${dayExpenses.length > 0 ? `
+                        <div class="day-expenses-indicator">
+                            <span class="expense-count">${dayExpenses.length}</span>
+                            <span class="expense-total">ரூ${totalAmount.toFixed(2)}</span>
+                        </div>
+                    ` : ''}
+                    ${dayReminders.length > 0 ? `
+                        <div class="day-reminders-indicator" style="background: #FFE4B5; padding: 2px 5px; border-radius: 3px; font-size: 0.7rem; margin-top: 2px;">
+                            <span>🔔 ${dayReminders.length} reminder${dayReminders.length > 1 ? 's' : ''}</span>
+                        </div>
+                    ` : ''}
+                `;
+
+                if (dayExpenses.length > 0 || dayReminders.length > 0) {
+                    dayElement.classList.add('has-expenses');
+                    dayElement.addEventListener('click', () => showDayDetails(dateStr, dayExpenses, dayReminders));
+                }
+
+                // Highlight today
+                const today = new Date();
+                if (year === today.getFullYear() && month === today.getMonth() && day === today.getDate()) {
+                    dayElement.classList.add('today');
+                }
+
+                calendarGrid.appendChild(dayElement);
+            }
+        }
+
+        function showDayDetails(date, dayExpenses, dayReminders = []) {
+            const modal = document.getElementById('dayModal');
+            const title = document.getElementById('dayModalTitle');
+            const expensesContainer = document.getElementById('dayExpenses');
+
+            title.textContent = `Details for ${new Date(date).toLocaleDateString()}`;
+
+            let contentHTML = '';
+            
+            // Show expenses
+            if (dayExpenses.length > 0) {
+                const expensesHTML = dayExpenses.map(expense => `
+                    <div class="day-expense-item">
+                        <div class="expense-info">
+                            <div class="expense-title">${expense.title}</div>
+                            <div class="expense-category">${expense.category}</div>
+                            ${expense.location ? `<div class="expense-location">📍 ${expense.location}</div>` : ''}
+                        </div>
+                        <div class="expense-amount">ரூ${parseFloat(expense.amount).toFixed(2)}</div>
+                    </div>
+                `).join('');
+
+                const totalAmount = dayExpenses.reduce((sum, expense) => sum + parseFloat(expense.amount), 0);
+
+                contentHTML += `
+                    <h4 style="margin-top: 0;">💳 Expenses</h4>
+                    ${expensesHTML}
+                    <div class="day-total">
+                        <strong>Total: ரூ${totalAmount.toFixed(2)}</strong>
+                    </div>
+                `;
+            }
+            
+            // Show reminders
+            if (dayReminders.length > 0) {
+                const remindersHTML = dayReminders.map(reminder => `
+                    <div class="day-reminder-item" style="padding: 10px; background: #FFF5EE; border-left: 3px solid #FFE4B5; margin: 5px 0; border-radius: 3px;">
+                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+                            <div style="flex: 1 1 auto;">
+                                <div style="font-weight: 600; color: #4682B4;">🔔 ${reminder.title}</div>
+                                <div style="font-size: 0.85rem; color: #666; margin-top: 3px;">
+                                    Type: <span style="background: #FFE4B5; padding: 2px 6px; border-radius: 3px;">${reminder.type}</span>
+                                </div>
+                                ${reminder.notes ? `<div style=\"font-size: 0.85rem; color: #666; margin-top: 5px; font-style: italic;\">${reminder.notes}</div>` : ''}
+                            </div>
+                            <button onclick="deleteReminder('${reminder.id}', '${date}')" class="btn-danger" style="padding: 6px 10px;">Delete</button>
+                        </div>
+                    </div>
+                `).join('');
+
+                contentHTML += `
+                    <h4 style="margin-top: 20px;">🔔 Reminders</h4>
+                    ${remindersHTML}
+                `;
+            }
+            
+            if (dayExpenses.length === 0 && dayReminders.length === 0) {
+                contentHTML = '<div style="text-align: center; padding: 20px; color: #999;">No expenses or reminders for this day</div>';
+            }
+
+            expensesContainer.innerHTML = contentHTML;
+            modal.style.display = 'block';
+        }
+
+        async function deleteReminder(reminderId, date) {
+            try {
+                let deleted = false;
+                // Try Supabase
+                try {
+                    const { error } = await supabase
+                        .from('app_7433469c6a_reminders')
+                        .delete()
+                        .eq('id', reminderId);
+                    if (!error) {
+                        deleted = true;
+                    } else {
+                        throw error;
+                    }
+                } catch (dbErr) {
+                    // Fallback: remove from localStorage if present
+                    const localReminders = JSON.parse(localStorage.getItem('aureus_reminders') || '[]');
+                    const next = localReminders.filter(r => r.id !== reminderId);
+                    if (next.length !== localReminders.length) {
+                        localStorage.setItem('aureus_reminders', JSON.stringify(next));
+                        deleted = true;
+                    } else {
+                        // Not in local either -> mark hidden so UI removes it
+                        const deletedIds = JSON.parse(localStorage.getItem('aureus_deleted_reminder_ids') || '[]');
+                        if (!deletedIds.includes(reminderId)) {
+                            deletedIds.push(reminderId);
+                            localStorage.setItem('aureus_deleted_reminder_ids', JSON.stringify(deletedIds));
+                        }
+                        deleted = true;
+                    }
+                }
+
+                if (deleted) {
+                    // Remove from in-memory array too
+                    reminders = reminders.filter(r => r.id !== reminderId);
+                    showMessage('Reminder deleted', 'success');
+                    generateCalendar();
+                    // Reopen details for the same date if still present
+                    const dayExpenses = expenses.filter(expense => expense.date === date);
+                    const dayReminders = reminders.filter(reminder => reminder.date === date);
+                    if (dayExpenses.length > 0 || dayReminders.length > 0) {
+                        showDayDetails(date, dayExpenses, dayReminders);
+                    } else {
+                        closeModals();
+                    }
+                } else {
+                    showMessage('Failed to delete reminder', 'error');
+                }
+            } catch (e) {
+                console.error('Delete reminder error:', e);
+                showMessage('Failed to delete reminder', 'error');
+            }
+        }
+
+        function updateMonthlySummary() {
+            const year = currentDate.getFullYear();
+            const month = currentDate.getMonth();
+            
+            const monthlyExpenses = expenses.filter(expense => {
+                const expenseDate = new Date(expense.date);
+                return expenseDate.getFullYear() === year && expenseDate.getMonth() === month;
+            });
+
+            const totalAmount = monthlyExpenses.reduce((sum, expense) => sum + parseFloat(expense.amount), 0);
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            const dailyAverage = totalAmount / daysInMonth;
+
+            // Find highest spending day
+            const dailyTotals = {};
+            monthlyExpenses.forEach(expense => {
+                const date = expense.date;
+                dailyTotals[date] = (dailyTotals[date] || 0) + parseFloat(expense.amount);
+            });
+
+            const highestAmount = Math.max(...Object.values(dailyTotals), 0);
+
+            document.getElementById('monthlyTotal').textContent = `ரூ${totalAmount.toFixed(2)}`;
+            document.getElementById('dailyAverage').textContent = `ரூ${dailyAverage.toFixed(2)}`;
+            document.getElementById('highestDay').textContent = `ரூ${highestAmount.toFixed(2)}`;
+            document.getElementById('transactionCount').textContent = monthlyExpenses.length.toString();
+        }
+
+        function openReminderModal() {
+            document.getElementById('reminderModal').style.display = 'block';
+            document.getElementById('reminderDate').value = new Date().toISOString().split('T')[0];
+        }
+
+        async function handleReminderSubmit(e) {
+            e.preventDefault();
+            
+            // Get user ID
+            let userId = 'demo-user';
+            try {
+                const { data: { user } } = await supabase.auth.getUser();
+                if (user) userId = user.id;
+            } catch (err) {
+                console.log('Using demo user ID');
+            }
+            
+            const reminderData = {
+                id: 'reminder-' + Date.now(),
+                title: document.getElementById('reminderTitle').value,
+                date: document.getElementById('reminderDate').value,
+                type: document.getElementById('reminderType').value,
+                notes: document.getElementById('reminderNotes').value || null,
+                user_id: userId,
+                created_at: new Date().toISOString()
+            };
+
+            try {
+                // Try to save to Supabase
+                try {
+                    const { error } = await supabase
+                        .from('app_7433469c6a_reminders')
+                        .insert([reminderData]);
+                    
+                    if (!error) {
+                        reminders.push(reminderData);
+                        showMessage('Reminder added to database!', 'success');
+                    } else {
+                        throw error;
+                    }
+                } catch (supabaseError) {
+                    console.log('Supabase not available, saving locally');
+                    
+                    // Save to localStorage
+                    const localReminders = JSON.parse(localStorage.getItem('aureus_reminders') || '[]');
+                    localReminders.push(reminderData);
+                    localStorage.setItem('aureus_reminders', JSON.stringify(localReminders));
+                    
+                    reminders.push(reminderData);
+                    showMessage('Reminder saved locally!', 'success');
+                }
+                
+                // Reload calendar to show reminder
+                generateCalendar();
+                closeModals();
+                document.getElementById('reminderForm').reset();
+            } catch (error) {
+                console.error('Error saving reminder:', error);
+                showMessage('Failed to save reminder', 'error');
+            }
+        }
+
+        async function exportToCsv() {
+            try {
+                if (expenses.length === 0) {
+                    showMessage('No expenses to export', 'error');
+                    return;
+                }
+
+                const csvHeaders = ['Date', 'Title', 'Amount', 'Category', 'Location', 'Notes'];
+                const csvRows = expenses.map(expense => [
+                    expense.date,
+                    expense.title,
+                    expense.amount,
+                    expense.category,
+                    expense.location || '',
+                    expense.notes || ''
+                ]);
+
+                const csvContent = [csvHeaders, ...csvRows]
+                    .map(row => row.map(field => `"${field}"`).join(','))
+                    .join('\n');
+
+                const blob = new Blob([csvContent], { type: 'text/csv' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `aureus-expenses-${new Date().toISOString().split('T')[0]}.csv`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+
+                showMessage('CSV exported successfully!', 'success');
+            } catch (error) {
+                console.error('Error exporting CSV:', error);
+                showMessage('Failed to export CSV', 'error');
+            }
+        }
+
+        function closeModals() {
+            document.querySelectorAll('.modal').forEach(modal => {
+                modal.style.display = 'none';
+            });
+        }
+
+        function showMessage(message, type) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+            messageDiv.textContent = message;
+            messageDiv.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                padding: 15px 20px;
+                border-radius: 5px;
+                color: white;
+                z-index: 10000;
+                background: ${type === 'success' ? '#4CAF50' : '#f44336'};
+            `;
+            
+            document.body.appendChild(messageDiv);
+            
+            setTimeout(() => {
+                messageDiv.remove();
+            }, 3000);
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="https://public-frontend-cos.metadl.com/mgx/img/favicon.png" type="image/png">
+    <title>Aureus - Expense Manager</title>
+    <link rel="stylesheet" href="./style.css">
+    <!-- Supabase -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <h2>💰 Aureus</h2>
+            </div>
+            <div class="nav-menu">
+                <a href="index.html" class="nav-link">Dashboard</a>
+                <a href="expenses.html" class="nav-link active">Expenses</a>
+                <a href="map.html" class="nav-link">Map</a>
+                <a href="calendar.html" class="nav-link">Calendar</a>
+                <button id="logoutBtn" class="logout-btn">Logout</button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="page-header">
+            <h1>💳 Expense Manager</h1>
+            <button id="addExpenseBtn" class="btn-primary">Add New Expense</button>
+        </div>
+
+        <!-- Filters -->
+        <div class="filters-section">
+            <div class="filter-group">
+                <select id="categoryFilter">
+                    <option value="">All Categories</option>
+                    <option value="Food">Food & Dining</option>
+                    <option value="Transportation">Transportation</option>
+                    <option value="Shopping">Shopping</option>
+                    <option value="Entertainment">Entertainment</option>
+                    <option value="Bills">Bills & Utilities</option>
+                    <option value="Healthcare">Healthcare</option>
+                    <option value="Other">Other</option>
+                </select>
+                <input type="date" id="dateFromFilter">
+                <input type="date" id="dateToFilter">
+                <button id="applyFilters" class="btn-secondary">Apply Filters</button>
+                <button id="clearFilters" class="btn-secondary">Clear</button>
+            </div>
+        </div>
+
+        <!-- Expenses List -->
+        <div class="expenses-section">
+            <div id="expensesList" class="expenses-list">
+                <div class="loading">Loading expenses...</div>
+            </div>
+        </div>
+
+        <!-- Pagination -->
+        <div class="pagination" id="pagination" style="display: none;">
+            <button id="prevPage" class="btn-secondary">Previous</button>
+            <span id="pageInfo">Page 1 of 1</span>
+            <button id="nextPage" class="btn-secondary">Next</button>
+        </div>
+    </div>
+
+    <!-- Add/Edit Expense Modal -->
+    <div id="expenseModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h3 id="modalTitle">Add New Expense</h3>
+            <form id="expenseForm">
+                <input type="hidden" id="expenseId">
+                <div class="form-group">
+                    <label for="expenseTitle">Title</label>
+                    <input type="text" id="expenseTitle" placeholder="Expense Title" required>
+                </div>
+                <div class="form-group">
+                    <label for="expenseAmount">Amount (in ரூ INR)</label>
+                    <input type="number" id="expenseAmount" placeholder="0.00" step="0.01" required>
+                    <small style="color: #666; display: block; margin-top: 5px;">Enter amount in Indian Rupees (ரூ)</small>
+                </div>
+                <div class="form-group">
+                    <label for="expenseCategory">Category</label>
+                    <select id="expenseCategory" required>
+                        <option value="">Select Category</option>
+                        <option value="Food">Food & Dining</option>
+                        <option value="Transportation">Transportation</option>
+                        <option value="Shopping">Shopping</option>
+                        <option value="Entertainment">Entertainment</option>
+                        <option value="Bills">Bills & Utilities</option>
+                        <option value="Healthcare">Healthcare</option>
+                        <option value="Other">Other</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="expenseDate">Date</label>
+                    <input type="date" id="expenseDate" required>
+                </div>
+                <div class="form-group">
+                    <label for="expenseLocation">Location</label>
+                    <input type="text" id="expenseLocation" placeholder="Location (required)" required>
+                    <div id="locationSuggestions" style="display:none; position: absolute; background: #fff; border: 1px solid #ddd; border-radius: 6px; margin-top: 4px; max-height: 220px; overflow-y: auto; width: 100%; z-index: 9999;"></div>
+                    <small id="locationStatus" style="color: #666; display: block; margin-top: 5px;"></small>
+                </div>
+                <input type="hidden" id="expenseLatitude">
+                <input type="hidden" id="expenseLongitude">
+                <div class="form-group">
+                    <label for="expenseNotes">Notes</label>
+                    <textarea id="expenseNotes" placeholder="Additional notes (optional)"></textarea>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn-primary" id="saveExpenseBtn">Save Expense</button>
+                    <button type="button" class="btn-secondary" id="cancelBtn">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div id="deleteModal" class="modal">
+        <div class="modal-content">
+            <h3>Confirm Delete</h3>
+            <p>Are you sure you want to delete this expense? This action cannot be undone.</p>
+            <div class="form-actions">
+                <button id="confirmDelete" class="btn-danger">Delete</button>
+                <button id="cancelDelete" class="btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="./auth.js"></script>
+    <script>
+        let currentExpenses = [];
+        let currentPage = 1;
+        const itemsPerPage = 10;
+        let deleteExpenseId = null;
+
+        // Geocoding function using Nominatim (OpenStreetMap)
+        async function geocodeLocation(locationName) {
+            if (!locationName || locationName.trim() === '') return null;
+            
+            console.log('🔍 Attempting to geocode location:', locationName);
+            
+            // Add delay to respect rate limits
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            try {
+                const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(locationName)}&limit=1`;
+                const response = await fetch(url, {
+                    headers: {
+                        'User-Agent': 'Aureus-Finance-App/1.0'
+                    }
+                });
+                
+                if (!response.ok) {
+                    console.error('Geocoding API error:', response.status, response.statusText);
+                    return null;
+                }
+                
+                const data = await response.json();
+                
+                if (data && data.length > 0) {
+                    console.log('✅ Geocoding successful:', data[0].display_name);
+                    console.log('   Coordinates:', data[0].lat, data[0].lon);
+                    return {
+                        latitude: parseFloat(data[0].lat),
+                        longitude: parseFloat(data[0].lon),
+                        display_name: data[0].display_name
+                    };
+                } else {
+                    console.log('❌ No results found for:', locationName);
+                }
+            } catch (error) {
+                console.error('❌ Geocoding error:', error);
+            }
+            
+            return null;
+        }
+
+        // Reverse geocoding to get a human-readable address from coordinates
+        async function reverseGeocode(lat, lon) {
+            try {
+                const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`;
+                const response = await fetch(url, {
+                    headers: {
+                        'User-Agent': 'Aureus-Finance-App/1.0'
+                    }
+                });
+                if (!response.ok) return null;
+                const data = await response.json();
+                return data?.display_name || null;
+            } catch (e) {
+                console.error('Reverse geocoding failed:', e);
+                return null;
+            }
+        }
+
+        // Simple placeholder to avoid runtime errors; hook your autocomplete here if needed
+        function setupLocationAutocomplete() {}
+
+        // Detect and prefill current location when opening the add expense modal
+        function detectAndFillCurrentLocation() {
+            const statusEl = document.getElementById('locationStatus');
+            const latEl = document.getElementById('expenseLatitude');
+            const lonEl = document.getElementById('expenseLongitude');
+
+            // Reset fields/status (do not overwrite user's typed location)
+            if (statusEl) statusEl.textContent = 'Detecting current location...';
+            latEl.value = '';
+            lonEl.value = '';
+
+            if (!('geolocation' in navigator)) {
+                if (statusEl) statusEl.textContent = 'Geolocation not supported. Please type your location.';
+                showMessage('Geolocation not supported by this browser.', 'error');
+                return;
+            }
+
+            navigator.geolocation.getCurrentPosition(async (pos) => {
+                const { latitude, longitude } = pos.coords;
+                latEl.value = latitude;
+                lonEl.value = longitude;
+                if (statusEl) statusEl.textContent = 'Location detected (you can type a different place).';
+            }, (err) => {
+                console.warn('Geolocation error:', err);
+                if (statusEl) statusEl.textContent = 'Unable to detect location. Please type it manually.';
+                showMessage('Please allow location access or enter location manually.', 'error');
+            }, {
+                enableHighAccuracy: true,
+                timeout: 8000,
+                maximumAge: 0
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            checkAuthStatus();
+            loadExpenses();
+            initializeEventListeners();
+        });
+
+        function initializeEventListeners() {
+            // Add expense button
+            document.getElementById('addExpenseBtn').addEventListener('click', function() {
+                openExpenseModal();
+            });
+
+            // Modal close buttons
+            document.querySelectorAll('.close').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    closeModals();
+                });
+            });
+
+            // Expense form submission
+            document.getElementById('expenseForm').addEventListener('submit', handleExpenseSubmit);
+
+            // Location autocomplete
+            setupLocationAutocomplete();
+
+            // Filter buttons
+            document.getElementById('applyFilters').addEventListener('click', applyFilters);
+            document.getElementById('clearFilters').addEventListener('click', clearFilters);
+
+            // Pagination
+            document.getElementById('prevPage').addEventListener('click', () => changePage(-1));
+            document.getElementById('nextPage').addEventListener('click', () => changePage(1));
+
+            // Delete modal buttons
+            document.getElementById('confirmDelete').addEventListener('click', confirmDelete);
+            document.getElementById('cancelDelete').addEventListener('click', () => {
+                document.getElementById('deleteModal').style.display = 'none';
+            });
+
+            // Cancel button
+            document.getElementById('cancelBtn').addEventListener('click', closeModals);
+        }
+
+        async function loadExpenses() {
+            try {
+                const { data: expenses, error } = await supabase
+                    .from('app_7433469c6a_expenses')
+                    .select('*')
+                    .order('date', { ascending: false });
+
+                if (error) throw error;
+
+                currentExpenses = expenses || [];
+                displayExpenses();
+            } catch (error) {
+                console.error('Error loading expenses:', error);
+                showMessage('Failed to load expenses', 'error');
+            }
+        }
+
+        function displayExpenses() {
+            const expensesList = document.getElementById('expensesList');
+            
+            if (currentExpenses.length === 0) {
+                expensesList.innerHTML = '<div class="no-data">No expenses found. Add your first expense!</div>';
+                return;
+            }
+
+            // Filter out locally-deleted ids (if backend deletion not permitted)
+            const deletedIds = JSON.parse(localStorage.getItem('aureus_deleted_ids') || '[]');
+            const visibleExpenses = currentExpenses.filter(e => !deletedIds.includes(e.id));
+
+            const startIndex = (currentPage - 1) * itemsPerPage;
+            const endIndex = startIndex + itemsPerPage;
+            const paginatedExpenses = visibleExpenses.slice(startIndex, endIndex);
+
+            const expensesHTML = paginatedExpenses.map(expense => `
+                <div class="expense-item">
+                    <div class="expense-info">
+                        <div class="expense-title">${expense.title}</div>
+                        <div class="expense-details">
+                            <span class="expense-category">${expense.category}</span>
+                            <span class="expense-date">${new Date(expense.date).toLocaleDateString()}</span>
+                            ${expense.location ? `<span class="expense-location">📍 ${expense.location}</span>` : ''}
+                        </div>
+                        ${expense.notes ? `<div class="expense-notes">${expense.notes}</div>` : ''}
+                    </div>
+                    <div class="expense-amount">ரூ${parseFloat(expense.amount).toFixed(2)}</div>
+                    <div class="expense-actions">
+                        <button class="btn-edit" onclick="editExpense('${expense.id}')">Edit</button>
+                        <button class="btn-delete" onclick="deleteExpense('${expense.id}')">Delete</button>
+                    </div>
+                </div>
+            `).join('');
+
+            expensesList.innerHTML = expensesHTML;
+            updatePagination();
+        }
+
+        function updatePagination() {
+            const totalPages = Math.ceil(currentExpenses.length / itemsPerPage);
+            const pagination = document.getElementById('pagination');
+            
+            if (totalPages <= 1) {
+                pagination.style.display = 'none';
+                return;
+            }
+
+            pagination.style.display = 'flex';
+            document.getElementById('pageInfo').textContent = `Page ${currentPage} of ${totalPages}`;
+            document.getElementById('prevPage').disabled = currentPage === 1;
+            document.getElementById('nextPage').disabled = currentPage === totalPages;
+        }
+
+        function changePage(direction) {
+            const totalPages = Math.ceil(currentExpenses.length / itemsPerPage);
+            const newPage = currentPage + direction;
+            
+            if (newPage >= 1 && newPage <= totalPages) {
+                currentPage = newPage;
+                displayExpenses();
+            }
+        }
+
+        function openExpenseModal(expense = null) {
+            const modal = document.getElementById('expenseModal');
+            const title = document.getElementById('modalTitle');
+            const form = document.getElementById('expenseForm');
+            const statusEl = document.getElementById('locationStatus');
+            
+            if (expense) {
+                title.textContent = 'Edit Expense';
+                document.getElementById('expenseId').value = expense.id;
+                document.getElementById('expenseTitle').value = expense.title;
+                document.getElementById('expenseAmount').value = expense.amount;
+                document.getElementById('expenseCategory').value = expense.category;
+                document.getElementById('expenseDate').value = expense.date;
+                document.getElementById('expenseLocation').value = expense.location || '';
+                document.getElementById('expenseNotes').value = expense.notes || '';
+                // Prefill lat/lon if present on expense
+                document.getElementById('expenseLatitude').value = expense.latitude || '';
+                document.getElementById('expenseLongitude').value = expense.longitude || '';
+                if (statusEl) statusEl.textContent = '';
+            } else {
+                title.textContent = 'Add New Expense';
+                form.reset();
+                document.getElementById('expenseDate').value = new Date().toISOString().split('T')[0];
+                // Auto-detect current location for new expense
+                detectAndFillCurrentLocation();
+            }
+            
+            modal.style.display = 'block';
+        }
+
+        async function handleExpenseSubmit(e) {
+            e.preventDefault();
+            
+            // Get user ID
+            let userId = 'demo-user';
+            try {
+                const { data: { user } } = await supabase.auth.getUser();
+                if (user) userId = user.id;
+            } catch (err) {
+                console.log('Using demo user ID');
+            }
+            
+            const expenseData = {
+                title: document.getElementById('expenseTitle').value,
+                amount: parseFloat(document.getElementById('expenseAmount').value),
+                category: document.getElementById('expenseCategory').value,
+                date: document.getElementById('expenseDate').value,
+                location: document.getElementById('expenseLocation').value || null,
+                notes: document.getElementById('expenseNotes').value || null,
+                user_id: userId
+            };
+
+            // Pull lat/lon from hidden fields if already detected
+            const latVal = document.getElementById('expenseLatitude').value;
+            const lonVal = document.getElementById('expenseLongitude').value;
+            if (latVal) expenseData.latitude = parseFloat(latVal);
+            if (lonVal) expenseData.longitude = parseFloat(lonVal);
+
+            // Enforce location requirement
+            if (!expenseData.location) {
+                showMessage('Location is required. Please enable location or enter a place.', 'error');
+                return;
+            }
+        
+            try {
+                const expenseId = document.getElementById('expenseId').value;
+                
+                // Always geocode the user-entered location to match the desired pin
+                showMessage('Geocoding location...', 'success');
+                const coords = await geocodeLocation(expenseData.location);
+                if (coords) {
+                    expenseData.latitude = coords.latitude;
+                    expenseData.longitude = coords.longitude;
+                    console.log('✅ Geocoded location:', expenseData.location, coords);
+                } else {
+                    // Apply VIT presets only if user actually typed one of those campus locations
+                    const vitCoords = getVITLocationCoords(expenseData.location);
+                    if (vitCoords) {
+                        expenseData.latitude = vitCoords.latitude;
+                        expenseData.longitude = vitCoords.longitude;
+                        console.log('✅ Using VIT preset for:', expenseData.location, vitCoords);
+                    } else {
+                        showMessage('Could not find that location. Please include city/state/country or try a nearby landmark.', 'error');
+                        return; // stop submit to avoid saving with wrong/random coordinates
+                    }
+                }
+                
+                console.log('Expense data before saving:', expenseData);
+
+                // Try to save to Supabase
+                try {
+                    if (expenseId) {
+                        // Update existing expense
+                        const { error } = await supabase
+                            .from('app_7433469c6a_expenses')
+                            .update(expenseData)
+                            .eq('id', expenseId);
+                        
+                        if (error) throw error;
+                        showMessage('Expense updated successfully!', 'success');
+                    } else {
+                        // Create new expense
+                        const { error } = await supabase
+                            .from('app_7433469c6a_expenses')
+                            .insert([expenseData]);
+                        
+                        if (error) throw error;
+                        showMessage('Expense added successfully!', 'success');
+                    }
+                } catch (supabaseError) {
+                    console.error('Supabase error, using localStorage:', supabaseError);
+                    
+                    // Fallback: Save to localStorage
+                    const localExpenses = JSON.parse(localStorage.getItem('aureus_expenses') || '[]');
+                    
+                    if (expenseId) {
+                        const index = localExpenses.findIndex(e => e.id === expenseId);
+                        if (index !== -1) {
+                            localExpenses[index] = { ...expenseData, id: expenseId };
+                        }
+                    } else {
+                        expenseData.id = 'local-' + Date.now();
+                        localExpenses.push(expenseData);
+                    }
+                    
+                    localStorage.setItem('aureus_expenses', JSON.stringify(localExpenses));
+                    showMessage('Expense saved locally!', 'success');
+                }
+                
+                // Notify map page about new expense
+                notifyMapUpdate();
+                
+                closeModals();
+                loadExpenses();
+            } catch (error) {
+                console.error('Error saving expense:', error);
+                showMessage('Failed to save expense: ' + error.message, 'error');
+            }
+        }
+        
+        // Helper function to get VIT campus location coordinates
+        function getVITLocationCoords(locationName) {
+            const vitLocations = {
+                // Dining locations
+                'dc': {latitude: 12.9700, longitude: 79.1570},
+                'dining court': {latitude: 12.9700, longitude: 79.1570},
+                'dc vit': {latitude: 12.9700, longitude: 79.1570},
+                'vit dc': {latitude: 12.9700, longitude: 79.1570},
+                'vit canteen': {latitude: 12.9708, longitude: 79.1575},
+                'canteen': {latitude: 12.9708, longitude: 79.1575},
+                
+                // Gates
+                'vit main gate': {latitude: 12.9690, longitude: 79.1550},
+                'main gate': {latitude: 12.9690, longitude: 79.1550},
+                'gate': {latitude: 12.9690, longitude: 79.1550},
+                
+                // Academic buildings
+                'vit library': {latitude: 12.9705, longitude: 79.1560},
+                'library': {latitude: 12.9705, longitude: 79.1560},
+                'anna audi': {latitude: 12.9702, longitude: 79.1568},
+                'anna auditorium': {latitude: 12.9702, longitude: 79.1568},
+                'cdmm': {latitude: 12.9698, longitude: 79.1565},
+                'tt': {latitude: 12.9695, longitude: 79.1563},
+                'tech tower': {latitude: 12.9695, longitude: 79.1563},
+                
+                // Student facilities
+                'student center': {latitude: 12.9695, longitude: 79.1570},
+                'sc': {latitude: 12.9695, longitude: 79.1570},
+                'sports complex': {latitude: 12.9725, longitude: 79.1575},
+                'medical center': {latitude: 12.9710, longitude: 79.1555},
+                'hospital': {latitude: 12.9710, longitude: 79.1555},
+                
+                // Hostels
+                'hostel a': {latitude: 12.9715, longitude: 79.1580},
+                'hostel b': {latitude: 12.9720, longitude: 79.1585},
+                'hostel c': {latitude: 12.9718, longitude: 79.1578},
+                'hostel d': {latitude: 12.9722, longitude: 79.1582},
+                'hostel': {latitude: 12.9715, longitude: 79.1580},
+                'ladies hostel': {latitude: 12.9712, longitude: 79.1588},
+                'lh': {latitude: 12.9712, longitude: 79.1588},
+                
+                // Food outlets
+                'dominos': {latitude: 12.9685, longitude: 79.1545},
+                'juice shop': {latitude: 12.9700, longitude: 79.1565},
+                'coffee day': {latitude: 12.9692, longitude: 79.1558},
+                'ccd': {latitude: 12.9692, longitude: 79.1558},
+                'shawarma': {latitude: 12.9703, longitude: 79.1552},
+                'amul': {latitude: 12.9704, longitude: 79.1566},
+                
+                // Shops & Services
+                'technology park': {latitude: 12.9680, longitude: 79.1590},
+                'tech park': {latitude: 12.9680, longitude: 79.1590},
+                'atm': {latitude: 12.9688, longitude: 79.1568},
+                'bookstore': {latitude: 12.9697, longitude: 79.1572},
+                'vit store': {latitude: 12.9697, longitude: 79.1572},
+                'xerox': {latitude: 12.9699, longitude: 79.1567}
+            };
+            
+            const searchName = locationName.toLowerCase().trim();
+            
+            // Direct match
+            if (vitLocations[searchName]) {
+                return vitLocations[searchName];
+            }
+            
+            // Partial match
+            for (const [key, coords] of Object.entries(vitLocations)) {
+                if (searchName.includes(key) || key.includes(searchName)) {
+                    return coords;
+                }
+            }
+            
+            return null;
+        }
+
+        // Function to notify map page about updates
+        function notifyMapUpdate() {
+            // Send a message to other tabs/windows
+            if (window.BroadcastChannel) {
+                const channel = new BroadcastChannel('expense_updates');
+                channel.postMessage({ type: 'new_expense' });
+                channel.close();
+            }
+            
+            // Also update localStorage to trigger storage event
+            localStorage.setItem('expense_update', Date.now().toString());
+        }
+
+        async function editExpense(id) {
+            const expense = currentExpenses.find(e => e.id === id);
+            if (expense) {
+                openExpenseModal(expense);
+            }
+        }
+
+        function deleteExpense(id) {
+            deleteExpenseId = id;
+            document.getElementById('deleteModal').style.display = 'block';
+        }
+
+        async function confirmDelete() {
+            if (!deleteExpenseId) return;
+            
+            try {
+                let deleted = false;
+                // If looks like a local item, delete from localStorage directly
+                if (String(deleteExpenseId).startsWith('local-')) {
+                    const localExpenses = JSON.parse(localStorage.getItem('aureus_expenses') || '[]');
+                    const next = localExpenses.filter(e => e.id !== deleteExpenseId);
+                    localStorage.setItem('aureus_expenses', JSON.stringify(next));
+                    deleted = true;
+                } else {
+                    // Try Supabase delete
+                    try {
+                        const { error } = await supabase
+                            .from('app_7433469c6a_expenses')
+                            .delete()
+                            .eq('id', deleteExpenseId);
+                        if (!error) {
+                            deleted = true;
+                        } else {
+                            throw error;
+                        }
+                    } catch (dbErr) {
+                        // Fallback to local removal if it exists locally
+                        const localExpenses = JSON.parse(localStorage.getItem('aureus_expenses') || '[]');
+                        const next = localExpenses.filter(e => e.id !== deleteExpenseId);
+                        if (next.length !== localExpenses.length) {
+                            localStorage.setItem('aureus_expenses', JSON.stringify(next));
+                            deleted = true;
+                        } else {
+                            console.warn('Delete failed in DB and not found locally; hiding in UI');
+                            // Mark as locally deleted to hide from lists
+                            const deletedIds = JSON.parse(localStorage.getItem('aureus_deleted_ids') || '[]');
+                            if (!deletedIds.includes(deleteExpenseId)) {
+                                deletedIds.push(deleteExpenseId);
+                                localStorage.setItem('aureus_deleted_ids', JSON.stringify(deletedIds));
+                            }
+                            deleted = true; // treat as deleted for UI purposes
+                        }
+                    }
+                }
+
+                if (deleted) {
+                    showMessage('Expense deleted successfully!', 'success');
+                    // Notify map/listeners
+                    notifyMapUpdate();
+                } else {
+                    showMessage('Failed to delete expense', 'error');
+                }
+
+                document.getElementById('deleteModal').style.display = 'none';
+                deleteExpenseId = null;
+                loadExpenses();
+            } catch (error) {
+                console.error('Error deleting expense:', error);
+                showMessage('Failed to delete expense', 'error');
+                document.getElementById('deleteModal').style.display = 'none';
+                deleteExpenseId = null;
+            }
+        }
+
+        function applyFilters() {
+            const category = document.getElementById('categoryFilter').value;
+            const dateFrom = document.getElementById('dateFromFilter').value;
+            const dateTo = document.getElementById('dateToFilter').value;
+            
+            // Apply filters logic here
+            loadExpenses(); // For now, just reload
+        }
+
+        function clearFilters() {
+            document.getElementById('categoryFilter').value = '';
+            document.getElementById('dateFromFilter').value = '';
+            document.getElementById('dateToFilter').value = '';
+            loadExpenses();
+        }
+
+        function closeModals() {
+            document.querySelectorAll('.modal').forEach(modal => {
+                modal.style.display = 'none';
+            });
+        }
+
+        function showMessage(message, type) {
+            // Create and show a temporary message
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+            messageDiv.textContent = message;
+            messageDiv.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                padding: 15px 20px;
+                border-radius: 5px;
+                color: white;
+                z-index: 10000;
+                background: ${type === 'success' ? '#4CAF50' : '#f44336'};
+            `;
+            
+            document.body.appendChild(messageDiv);
+            
+            setTimeout(() => {
+                messageDiv.remove();
+            }, 3000);
+        }
+    </script>
+</body>
+</html>

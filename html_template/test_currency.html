@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Currency Test</title>
+    <meta charset="UTF-8">
+</head>
+<body>
+    <h1>Currency Formatting Test</h1>
+    <div id="testResult"></div>
+    
+    <script>
+        // Test the updated formatCurrency function
+        let currentCurrency = 'INR';
+        
+        function formatCurrency(amount) {
+            if (currentCurrency === 'INR') {
+                return 'ரூ' + new Intl.NumberFormat('en-IN', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                }).format(amount);
+            }
+            return new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: currentCurrency
+            }).format(amount);
+        }
+        
+        // Test different amounts
+        const testAmounts = [100, 1000, 10000, 100000];
+        let results = '<h3>INR Currency Formatting:</h3>';
+        
+        testAmounts.forEach(amount => {
+            results += `<p>Amount ${amount}: ${formatCurrency(amount)}</p>`;
+        });
+        
+        // Test other currencies
+        currentCurrency = 'USD';
+        results += '<h3>USD Currency Formatting:</h3>';
+        results += `<p>Amount 1000: ${formatCurrency(1000)}</p>`;
+        
+        currentCurrency = 'EUR';
+        results += '<h3>EUR Currency Formatting:</h3>';
+        results += `<p>Amount 1000: ${formatCurrency(1000)}</p>`;
+        
+        document.getElementById('testResult').innerHTML = results;
+    </script>
+</body>
+</html>
