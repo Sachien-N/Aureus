@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="https://public-frontend-cos.metadl.com/mgx/img/favicon.png" type="image/png">
+    <title>Aureus - AI Finance Dashboard</title>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Supabase -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- Tesseract.js for OCR -->
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-BVCn_v1z.css">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <h2>💰 Aureus</h2>
+            </div>
+            <div class="nav-menu">
+                <a href="index.html" class="nav-link active">Dashboard</a>
+                <a href="expenses.html" class="nav-link">Expenses</a>
+                <a href="map.html" class="nav-link">Map</a>
+                <a href="calendar.html" class="nav-link">Calendar</a>
+                <button id="logoutBtn" class="logout-btn">Logout</button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Dashboard -->
+    <div class="container">
+        <!-- Welcome Section -->
+        <div class="welcome-section">
+            <h1>Welcome back, <span id="userName">User</span>! 👋</h1>
+            <p>Here's your financial overview for today</p>
+        </div>
+
+        <!-- Stats Cards -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-icon">💳</div>
+                <div class="stat-info">
+                    <h3 id="totalExpenses">$0.00</h3>
+                    <p>Total Expenses</p>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">📊</div>
+                <div class="stat-info">
+                    <h3 id="monthlyBudget">$0.00</h3>
+                    <p>Monthly Budget</p>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">💰</div>
+                <div class="stat-info">
+                    <h3 id="remainingBudget">$0.00</h3>
+                    <p>Remaining Budget</p>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">📈</div>
+                <div class="stat-info">
+                    <h3 id="savingsGoal">$0.00</h3>
+                    <p>Savings Goal</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Charts Section -->
+        <div class="charts-section">
+            <div class="chart-container">
+                <h3>Expense Categories</h3>
+                <canvas id="categoryChart"></canvas>
+            </div>
+            <div class="chart-container">
+                <h3>Monthly Trends</h3>
+                <canvas id="trendChart"></canvas>
+            </div>
+        </div>
+
+        <!-- AI Insights Panel -->
+        <div class="ai-insights-panel">
+            <h3>🤖 AI Financial Insights</h3>
+            <div id="aiInsights" class="insights-content">
+                <div class="loading">Generating personalized insights...</div>
+            </div>
+            <button id="refreshInsights" class="btn-primary">Refresh Insights</button>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="quick-actions">
+            <h3>Quick Actions</h3>
+            <div class="action-buttons">
+                <button id="addExpenseBtn" class="action-btn">
+                    <span>➕</span>
+                    Add Expense
+                </button>
+                <button id="scanReceiptBtn" class="action-btn">
+                    <span>📷</span>
+                    Scan Receipt
+                </button>
+                <button id="exportCsvBtn" class="action-btn">
+                    <span>📄</span>
+                    Export CSV
+                </button>
+                <button id="setCurrencyBtn" class="action-btn">
+                    <span>💱</span>
+                    Set Currency
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Expense Modal -->
+    <div id="addExpenseModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h3>Add New Expense</h3>
+            <form id="expenseForm">
+                <input type="text" id="expenseTitle" placeholder="Expense Title" required>
+                <input type="number" id="expenseAmount" placeholder="Amount" step="0.01" required>
+                <select id="expenseCategory" required>
+                    <option value="">Select Category</option>
+                    <option value="Food">Food & Dining</option>
+                    <option value="Transportation">Transportation</option>
+                    <option value="Shopping">Shopping</option>
+                    <option value="Entertainment">Entertainment</option>
+                    <option value="Bills">Bills & Utilities</option>
+                    <option value="Healthcare">Healthcare</option>
+                    <option value="Other">Other</option>
+                </select>
+                <input type="date" id="expenseDate" required>
+                <input type="text" id="expenseLocation" placeholder="Location (optional)">
+                <textarea id="expenseNotes" placeholder="Notes (optional)"></textarea>
+                <button type="submit" class="btn-primary">Add Expense</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Receipt Scanner Modal -->
+    <div id="scanModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h3>Scan Receipt</h3>
+            <div class="scan-area">
+                <input type="file" id="receiptFile" accept="image/*" style="display: none;">
+                <button id="selectFileBtn" class="btn-primary">Select Receipt Image</button>
+                <div id="scanProgress" class="scan-progress" style="display: none;">
+                    <div class="progress-bar">
+                        <div class="progress-fill"></div>
+                    </div>
+                    <p>Processing receipt...</p>
+                </div>
+                <div id="scanResults" class="scan-results" style="display: none;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Currency Selector Modal -->
+    <div id="currencyModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h3>Select Currency</h3>
+            <select id="currencySelect">
+                <option value="USD">USD - US Dollar</option>
+                <option value="EUR">EUR - Euro</option>
+                <option value="GBP">GBP - British Pound</option>
+                <option value="JPY">JPY - Japanese Yen</option>
+                <option value="CAD">CAD - Canadian Dollar</option>
+                <option value="AUD">AUD - Australian Dollar</option>
+            </select>
+            <button id="setCurrency" class="btn-primary">Set Currency</button>
+        </div>
+    </div>
+
+    <script src="./auth.js"></script>
+    <script src="./script.js"></script>
+</body>
+</html>
